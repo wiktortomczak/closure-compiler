@@ -32,6 +32,13 @@ public enum CompilationLevel {
   WHITESPACE_ONLY,
 
   /**
+   * DEPENDENCIES_ONLY processes module dependency information,
+   * eg. goog.require() and reorders JavaScript sources, in addition to steps
+   * done in WHITESPACE_ONLY.
+   */
+  DEPENDENCIES_ONLY,
+
+  /**
    * SIMPLE_OPTIMIZATIONS performs transformations to the input JS that do not
    * require any changes to JS that depend on the input JS. For example,
    * function arguments are renamed (which should not matter to code that
@@ -56,6 +63,9 @@ public enum CompilationLevel {
       case "WHITESPACE_ONLY":
       case "WHITESPACE":
         return CompilationLevel.WHITESPACE_ONLY;
+      case "DEPENDENCIES_ONLY":
+      case "DEPENDENCIES":
+        return CompilationLevel.DEPENDENCIES_ONLY;
       case "SIMPLE_OPTIMIZATIONS":
       case "SIMPLE":
         return CompilationLevel.SIMPLE_OPTIMIZATIONS;
@@ -72,6 +82,9 @@ public enum CompilationLevel {
     switch (this) {
       case WHITESPACE_ONLY:
         applyBasicCompilationOptions(options);
+        break;
+      case DEPENDENCIES_ONLY:
+        applyDependencyCompilationOptions(options);
         break;
       case SIMPLE_OPTIMIZATIONS:
         applySafeCompilationOptions(options);
@@ -98,6 +111,15 @@ public enum CompilationLevel {
    */
   private static void applyBasicCompilationOptions(CompilerOptions options) {
     options.skipAllCompilerPasses();
+  }
+
+  /**
+   * Gets options that act on module dependency information.
+   * @param options The CompilerOptions object to set the options on.
+   */
+  private static void applyDependencyCompilationOptions(CompilerOptions options) {
+    options.dependencyOptions.setDependencySorting(true);
+    options.setClosurePass(true);
   }
 
   /**
@@ -211,6 +233,7 @@ public enum CompilationLevel {
         options.setUseTypesForLocalOptimization(true);
         break;
       case SIMPLE_OPTIMIZATIONS:
+      case DEPENDENCIES_ONLY:
       case WHITESPACE_ONLY:
         break;
     }
@@ -237,6 +260,7 @@ public enum CompilationLevel {
         options.setRemoveUnusedVariables(Reach.ALL);
         break;
       case ADVANCED_OPTIMIZATIONS:
+      case DEPENDENCIES_ONLY:
       case WHITESPACE_ONLY:
         break;
     }

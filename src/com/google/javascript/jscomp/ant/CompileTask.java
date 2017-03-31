@@ -210,24 +210,6 @@ public final class CompileTask
     this.debugOptions = value;
   }
 
-  /**
-   * Set the compilation level.
-   * @param value The optimization level by string name.
-   *     (whitespace, simple, advanced).
-   */
-  public void setCompilationLevel(String value) {
-    if ("simple".equalsIgnoreCase(value)) {
-      this.compilationLevel = CompilationLevel.SIMPLE_OPTIMIZATIONS;
-    } else if ("advanced".equalsIgnoreCase(value)) {
-      this.compilationLevel = CompilationLevel.ADVANCED_OPTIMIZATIONS;
-    } else if ("whitespace".equalsIgnoreCase(value)) {
-      this.compilationLevel = CompilationLevel.WHITESPACE_ONLY;
-    } else {
-      throw new BuildException(
-          "Unrecognized 'compilation' option value (" + value + ")");
-    }
-  }
-
   public void setManageDependencies(boolean value) {
     this.manageDependencies = value;
   }

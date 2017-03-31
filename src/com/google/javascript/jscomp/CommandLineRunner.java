@@ -401,6 +401,7 @@ public class CommandLineRunner extends
         aliases = {"-O"},
         usage = "Specifies the compilation level to use. Options: "
             + "WHITESPACE_ONLY, "
+            + "DEPENDENCIES_ONLY, "
             + "SIMPLE, "
             + "ADVANCED")
     private String compilationLevel = "SIMPLE";
@@ -742,17 +743,14 @@ public class CommandLineRunner extends
     private final CmdLineParser parser;
 
     private static final ImmutableMap<String, CompilationLevel> COMPILATION_LEVEL_MAP =
-        ImmutableMap.of(
-            "WHITESPACE_ONLY",
-            CompilationLevel.WHITESPACE_ONLY,
-            "SIMPLE",
-            CompilationLevel.SIMPLE_OPTIMIZATIONS,
-            "SIMPLE_OPTIMIZATIONS",
-            CompilationLevel.SIMPLE_OPTIMIZATIONS,
-            "ADVANCED",
-            CompilationLevel.ADVANCED_OPTIMIZATIONS,
-            "ADVANCED_OPTIMIZATIONS",
-            CompilationLevel.ADVANCED_OPTIMIZATIONS);
+        ImmutableMap.<String, CompilationLevel>builder()
+        .put("WHITESPACE_ONLY", CompilationLevel.WHITESPACE_ONLY)
+        .put("DEPENDENCIES_ONLY", CompilationLevel.DEPENDENCIES_ONLY)
+        .put("SIMPLE", CompilationLevel.SIMPLE_OPTIMIZATIONS)
+        .put("SIMPLE_OPTIMIZATIONS", CompilationLevel.SIMPLE_OPTIMIZATIONS)
+        .put("ADVANCED", CompilationLevel.ADVANCED_OPTIMIZATIONS)
+        .put("ADVANCED_OPTIMIZATIONS", CompilationLevel.ADVANCED_OPTIMIZATIONS)
+        .build();
 
     Flags() {
       parser = new CmdLineParser(this);

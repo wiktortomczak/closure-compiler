@@ -161,6 +161,7 @@ public class Protocol {
 
   public static enum CompilationLevelKey implements ProtocolEnum {
     WHITESPACE_ONLY("whitespace_only"),
+    DEPENDENCIES_ONLY("dependencies_only"),
     SIMPLE_OPTIMIZATIONS("simple_optimizations"),
     ADVANCED_OPTIMIZATIONS("advanced_optimizations"),
     ;
