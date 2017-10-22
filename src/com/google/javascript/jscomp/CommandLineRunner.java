@@ -30,6 +30,7 @@ import com.google.common.collect.Multimap;
 import com.google.common.io.Files;
 import com.google.javascript.jscomp.CompilerOptions.IsolationMode;
 import com.google.javascript.jscomp.SourceMap.LocationMapping;
+import com.google.javascript.jscomp.deps.ExternModule;
 import com.google.javascript.jscomp.deps.ModuleLoader;
 import com.google.javascript.rhino.TokenStream;
 import com.google.protobuf.TextFormat;
@@ -163,6 +164,12 @@ public class CommandLineRunner extends
         + " and exits")
     private boolean printPassGraph = false;
 
+    @Option(name = "--print_config",
+        hidden = true,
+        handler = BooleanOptionHandler.class,
+        usage = "TODO")
+    private boolean printConfig = false;
+
     @Option(
       name = "--emit_use_strict",
       handler = BooleanOptionHandler.class,
@@ -198,6 +205,11 @@ public class CommandLineRunner extends
         usage = "The file containing JavaScript externs. You may specify"
         + " multiple")
     private List<String> externs = new ArrayList<>();
+
+    @Option(name = "--extern_module",
+        usage = "TODO")
+    private List<String> externModules = new ArrayList<>();
+    ImmutableMap<String, ExternModule> externModulesParsed = null;
 
     @Option(name = "--js",
         handler = JsOptionHandler.class,
@@ -461,6 +473,11 @@ public class CommandLineRunner extends
         handler = BooleanOptionHandler.class,
         usage = "Generates export code for local properties marked with @export")
     private boolean exportLocalPropertyDefinitions = false;
+
+    @Option(name = "--export_es6_modules",
+        handler = BooleanOptionHandler.class,
+        usage = "TODO")
+    private boolean exportEs6Modules = false;
 
     @Option(name = "--formatting",
         usage = "Specifies which formatting options, if any, should be "
@@ -738,6 +755,11 @@ public class CommandLineRunner extends
     )
     private ModuleLoader.ResolutionMode moduleResolutionMode = ModuleLoader.ResolutionMode.LEGACY;
 
+    @Option(name = "--extern_exports",
+            hidden = true,
+            usage = "TODO.")
+    private String externExportsPath = null;
+
     @Argument
     private List<String> arguments = new ArrayList<>();
     private final CmdLineParser parser;
@@ -767,6 +789,7 @@ public class CommandLineRunner extends
         throw new CmdLineException(
             parser, "Bad value for --compilation_level: " + compilationLevel);
       }
+      externModulesParsed = parseExternModules();
     }
 
     private static final Multimap<String, String> categories =
@@ -1040,6 +1063,39 @@ public class CommandLineRunner extends
       }
 
       return result.build();
+    }
+
+    // combinedExterns = externs + externModulesParsed.values()
+    List<String> getExterns() throws CmdLineException {
+      Set<String> moduleExterns = new HashSet<>();
+      for (ExternModule extern : externModulesParsed.values()) {
+        moduleExterns.add(extern.externsPath);
+      }
+
+      List<String> combinedExterns = new ArrayList<String>();
+      combinedExterns.addAll(externs);
+      combinedExterns.addAll(moduleExterns);
+      return combinedExterns;
+    }
+    
+    private ImmutableMap<String, ExternModule>
+    parseExternModules() throws CmdLineException {
+      ImmutableMap.Builder<String, ExternModule> externModulesMap =
+        new ImmutableMap.Builder<>();
+
+      Splitter splitter = Splitter.on(':').limit(3);
+      for (String externModule : externModules) {
+        List<String> parts = splitter.splitToList(externModule);
+        if (parts.size() != 3) {
+          throw new CmdLineException(parser, "Bad value --extern_module=" + externModule);
+        }
+        final String format = parts.get(0);
+        final String srcPath = parts.get(1);
+        final String externsPath = parts.get(2);
+        externModulesMap.put(srcPath, new ExternModule(format, externsPath));
+      }
+
+      return externModulesMap.build();
     }
 
     // Our own option parser to be backwards-compatible.
@@ -1351,6 +1407,7 @@ public class CommandLineRunner extends
     Flags.guardLevels.clear();
     Flags.mixedJsSources.clear();
 
+    List<String> externs = null;
     List<String> jsFiles = null;
     List<FlagEntry<JsSourceType>> mixedSources = null;
     List<LocationMapping> mappings = null;
@@ -1365,6 +1422,7 @@ public class CommandLineRunner extends
         processFlagFile();
       }
 
+      externs = flags.getExterns();
       jsFiles = flags.getJsFiles();
       mixedSources = flags.getMixedJsSources();
       mappings = flags.getSourceMapLocationMappings();
@@ -1497,7 +1555,7 @@ public class CommandLineRunner extends
           .setPrintPassGraph(flags.printPassGraph)
           .setJscompDevMode(flags.jscompDevMode)
           .setLoggingLevel(flags.loggingLevel)
-          .setExterns(flags.externs)
+          .setExterns(externs)
           .setJs(jsFiles)
           .setJsZip(flags.jszip)
           .setMixedJsSources(mixedSources)
@@ -1616,6 +1674,10 @@ public class CommandLineRunner extends
       options.setExportLocalPropertyDefinitions(true);
     }
 
+    if (flags.exportEs6Modules) {
+      options.setExportEs6Modules(flags.exportEs6Modules);
+    }
+
     WarningLevel wLevel = flags.warningLevel;
     wLevel.setOptionsForWarningLevel(options);
     for (FormattingOption formattingOption : flags.formatting) {
@@ -1709,6 +1771,14 @@ public class CommandLineRunner extends
     options.setEmitUseStrict(flags.emitUseStrict);
     options.setSourceMapIncludeSourcesContent(flags.sourceMapIncludeSourcesContent);
     options.setModuleResolutionMode(flags.moduleResolutionMode);
+    options.setExternModules(flags.externModulesParsed);
+    if (flags.externExportsPath != null) {
+      options.setExternExportsPath(flags.externExportsPath);
+    }
+
+    if (flags.printConfig) {
+      options.setPrintConfig(flags.printConfig);
+    }
 
     return options;
   }

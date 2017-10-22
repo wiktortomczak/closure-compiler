@@ -1554,6 +1554,7 @@ public class Compiler extends AbstractCompiler implements ErrorHandler, SourceFi
             new ModuleLoader(
                 this,
                 options.moduleRoots,
+                options.getExternModules(),
                 inputs,
                 ModuleLoader.PathResolver.RELATIVE,
                 options.moduleResolutionMode);

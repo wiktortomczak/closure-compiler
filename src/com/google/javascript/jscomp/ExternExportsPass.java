@@ -513,6 +513,7 @@ final class ExternExportsPass extends NodeTraversal.AbstractPostOrderCallback
   }
 
   private void handleSymbolExportCall(Node parent) {
+    System.out.println("### " + parent.toString());
     // Ensure that we only check valid calls with the 2 arguments
     // (plus the GETPROP node itself).
     if (parent.getChildCount() != 3) {

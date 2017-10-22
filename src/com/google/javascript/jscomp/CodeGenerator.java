@@ -110,6 +110,9 @@ public class CodeGenerator {
 
     if (preserveTypeAnnotations && n.getJSDocInfo() != null) {
       String jsdocAsString = jsDocInfoPrinter.print(n.getJSDocInfo());
+      if (n.getJSType() != null) {
+        jsdocAsString += "  // inferred type: " + n.getJSType().toAnnotationString();
+      }
       // Don't print an empty jsdoc
       if (!jsdocAsString.equals("/** */ ")) {
         add(jsdocAsString);

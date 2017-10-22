@@ -17,6 +17,7 @@
 package com.google.javascript.jscomp.deps;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.base.Function;
@@ -65,6 +66,8 @@ public final class ModuleLoader {
   /** The set of all known input module URIs (including trailing .js), after normalization. */
   private final ImmutableSet<String> modulePaths;
 
+  private final ImmutableMap<String, ExternModule> externModules;
+
   /** Named modules found in node_modules folders */
   private final ImmutableSortedMap<String, ImmutableSet<String>> nodeModulesRegistry;
 
@@ -84,10 +87,12 @@ public final class ModuleLoader {
   public ModuleLoader(
       @Nullable ErrorHandler errorHandler,
       Iterable<String> moduleRoots,
+      ImmutableMap<String, ExternModule> externModules,
       Iterable<? extends DependencyInfo> inputs,
       PathResolver pathResolver,
       ResolutionMode resolutionMode) {
     checkNotNull(moduleRoots);
+    checkNotNull(externModules);
     checkNotNull(inputs);
     checkNotNull(pathResolver);
     this.pathResolver = pathResolver;
@@ -97,6 +102,7 @@ public final class ModuleLoader {
         resolvePaths(
             Iterables.transform(Iterables.transform(inputs, UNWRAP_DEPENDENCY_INFO), pathResolver),
             moduleRootPaths);
+    this.externModules = externModules;
 
     this.packageJsonMainEntries = ImmutableMap.of();
 
@@ -109,7 +115,17 @@ public final class ModuleLoader {
       @Nullable ErrorHandler errorHandler,
       Iterable<String> moduleRoots,
       Iterable<? extends DependencyInfo> inputs,
+      PathResolver pathResolver,
       ResolutionMode resolutionMode) {
+    this(errorHandler, moduleRoots, ImmutableMap.<String, ExternModule>of(),
+         inputs, pathResolver, resolutionMode);
+  }
+    
+  public ModuleLoader(
+      @Nullable ErrorHandler errorHandler,
+      Iterable<String> moduleRoots,
+      Iterable<? extends DependencyInfo> inputs,
+      ResolutionMode resolutionMode) {    
     this(errorHandler, moduleRoots, inputs, PathResolver.RELATIVE, resolutionMode);
   }
 
@@ -142,15 +158,25 @@ public final class ModuleLoader {
    */
   public class ModulePath {
     private final String path;
+    public final ExternModule externModule;
     private final String[] fileExtensionsToSearch = {"", ".js", ".json"};
 
     private ModulePath(String path) {
+      this(path, null);
+    }
+
+    private ModulePath(String path, ExternModule externModule) {
       this.path = path;
+      this.externModule = externModule;
     }
 
     @Override
     public String toString() {
       return path;
+    }
+
+    public ExternModule getExternModule() {
+      return externModule;
     }
 
     /**
@@ -191,7 +217,13 @@ public final class ModuleLoader {
     @Nullable
     public ModulePath resolveJsModule(
         String moduleAddress, String sourcename, int lineno, int colno) {
+
       String loadAddress = null;
+
+      final ExternModule externModule = resolveExternModule(moduleAddress);
+      if (externModule != null) {
+        return new ModulePath(moduleAddress, externModule);
+      }
 
       // * the immediate name require'd
       switch (resolutionMode) {
@@ -317,6 +349,17 @@ public final class ModuleLoader {
             CheckLevel.WARNING, JSError.make(sourcename, lineno, colno, LOAD_WARNING, moduleName));
       }
       return resolved;
+    }
+
+    private ExternModule resolveExternModule(String moduleName) {
+      checkState(!isRelativeIdentifier(moduleName));
+      checkState(!isAbsoluteIdentifier(moduleName));
+      ExternModule externModule = externModules.get(moduleName);
+      if (externModule == null && !moduleName.endsWith(".js")) {
+        // Allow module names (references) with or without the ".js" extension.
+        externModule = externModules.get(moduleName + ".js");
+      }
+      return externModule;
     }
 
     /**

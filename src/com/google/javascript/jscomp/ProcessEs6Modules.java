@@ -19,6 +19,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableSet;
 import com.google.javascript.jscomp.NodeTraversal.AbstractPostOrderCallback;
+import com.google.javascript.jscomp.deps.ExternModule;
 import com.google.javascript.jscomp.deps.ModuleLoader;
 import com.google.javascript.rhino.IR;
 import com.google.javascript.rhino.JSDocInfo;
@@ -156,18 +157,20 @@ public final class ProcessEs6Modules extends AbstractPostOrderCallback {
   }
 
   private void visitImport(NodeTraversal t, Node importDecl, Node parent) {
-    String moduleName;
+    // Resolve importName to Module object.
     String importName = importDecl.getLastChild().getString();
+    Module module;
     boolean isNamespaceImport = importName.startsWith("goog:");
     if (isNamespaceImport) {
       // Allow importing Closure namespace objects (e.g. from goog.provide or goog.module) as
       //   import ... from 'goog:my.ns.Object'.
       // These are rewritten to plain namespace object accesses.
-      moduleName = importName.substring("goog:".length());
+      module = new ClosureModule(importName.substring("goog:".length()), null);
     } else {
       ModuleLoader.ModulePath modulePath =
           t.getInput()
               .getPath()
+              // TODO: Resolve also in extern modules.
               .resolveJsModule(
                   importName,
                   importDecl.getSourceFileName(),
@@ -178,8 +181,14 @@ public final class ProcessEs6Modules extends AbstractPostOrderCallback {
         // Fall back to assuming the module is a file path
         modulePath = t.getInput().getPath().resolveModuleAsPath(importName);
       }
-
-      moduleName = modulePath.toModuleName();
+      ExternModule externModule = modulePath.getExternModule();
+      if (externModule == null || "closure".equals(externModule.format)) {
+        module = new ClosureModule(modulePath.toModuleName(), externModule);
+      } else if ("npm".equals(externModule.format)) {
+          module = new NpmModule(externModule);
+      } else {
+        throw new RuntimeException("Unsupported extern module " + externModule);
+      }
     }
 
     for (Node child : importDecl.children()) {
@@ -188,18 +197,18 @@ public final class ProcessEs6Modules extends AbstractPostOrderCallback {
       } else if (child.isName()) { // import a from "mod"
         // Namespace imports' default export is the namespace itself.
         String name = isNamespaceImport ? "" : "default";
-        importMap.put(child.getString(), new ModuleOriginalNamePair(moduleName, name));
+        importMap.put(child.getString(), new ModuleOriginalNamePair(module, name));
       } else if (child.getToken() == Token.IMPORT_SPECS) {
         for (Node grandChild : child.children()) {
           String origName = grandChild.getFirstChild().getString();
           if (grandChild.hasTwoChildren()) { // import {a as foo} from "mod"
             importMap.put(
                 grandChild.getLastChild().getString(),
-                new ModuleOriginalNamePair(moduleName, origName));
+                new ModuleOriginalNamePair(module, origName));
           } else { // import {a} from "mod"
             importMap.put(
                 origName,
-                new ModuleOriginalNamePair(moduleName, origName));
+                new ModuleOriginalNamePair(module, origName));
           }
         }
       } else {
@@ -211,23 +220,32 @@ public final class ProcessEs6Modules extends AbstractPostOrderCallback {
         // Namespace imports cannot be imported "as *".
         if (isNamespaceImport) {
           compiler.report(t.makeError(importDecl, NAMESPACE_IMPORT_CANNOT_USE_STAR,
-              child.getString(), moduleName));
+            child.getString(), ((ClosureModule)module).name));
         }
         importMap.put(
             child.getString(),
-            new ModuleOriginalNamePair(moduleName, ""));
+            new ModuleOriginalNamePair(module, ""));
       }
     }
 
     Node script = NodeUtil.getEnclosingScript(parent);
-    // Emit goog.require call for the module.
-    if (alreadyRequired.add(moduleName)) {
-      Node require = IR.exprResult(
-          IR.call(NodeUtil.newQName(compiler, "goog.require"), IR.string(moduleName)));
-      require.useSourceInfoIfMissingFromForTree(importDecl);
-      script.addChildAfter(require, googRequireInsertSpot);
-      googRequireInsertSpot = require;
-      t.getInput().addRequire(moduleName);
+    if (!module.isExtern()) {
+      if (alreadyRequired.add(((ClosureModule)module).name)) {
+        // Emit goog.require call for the module.
+        Node require = IR.exprResult(
+            IR.call(NodeUtil.newQName(compiler, "goog.require"),
+                    IR.string(((ClosureModule)module).name)));
+        require.useSourceInfoIfMissingFromForTree(importDecl);
+        script.addChildAfter(require, googRequireInsertSpot);
+        googRequireInsertSpot = require;
+        t.getInput().addRequire(((ClosureModule)module).name);
+      }
+    } else {
+      // Nothing to do. The extern module is assumed to have already been loaded
+      // into object named module.name in global namespace.
+      // TODO: Emit a comment or other indication stating this assumption,
+      // ideally a goog.require() that is not processed by the compiler.
+      // TODO: --process_closure_primitives=false?
     }
 
     parent.removeChild(importDecl);
@@ -397,12 +415,18 @@ public final class ProcessEs6Modules extends AbstractPostOrderCallback {
             NodeUtil.newQName(compiler, withSuffix));
         Node exprResult = IR.exprResult(assign)
             .useSourceInfoIfMissingFromForTree(nodeForSourceInfo);
-        if (classes.contains(exportedName)) {
-          JSDocInfoBuilder builder = new JSDocInfoBuilder(true);
-          builder.recordConstancy();
-          JSDocInfo info = builder.build();
-          assign.setJSDocInfo(info);
+        JSDocInfoBuilder builder = new JSDocInfoBuilder(true);
+        // // TODO: Print inferred type (node.getJSType()) instead?
+        // builder.recordType(nodeForSourceInfo.getJSDocInfo().getType());
+        if (compiler.options.exportEs6Modules) {
+          // TOOD: Export the module object, not individual symbols?
+          builder.recordExport();
         }
+        if (classes.contains(exportedName)) {
+          builder.recordConstancy();
+        }
+        JSDocInfo info = builder.build();
+        assign.setJSDocInfo(info);
         script.addChildToBack(exprResult);
       }
     }
@@ -533,13 +557,16 @@ public final class ProcessEs6Modules extends AbstractPostOrderCallback {
           }
 
           ModuleOriginalNamePair pair = importMap.get(name);
-          Node moduleAccess = NodeUtil.newQName(compiler, pair.module);
-          if (pair.originalName.isEmpty()) {
-            n.replaceWith(moduleAccess.useSourceInfoIfMissingFromForTree(n));
+          if (pair.originalName.isEmpty()) {            
+            // ns -> moduleObject  (was: import * as ns from module)
+            n.replaceWith(pair.module.getModuleNamespaceNode(compiler)
+                          .useSourceInfoIfMissingFromForTree(n));
           } else {
-            n.replaceWith(
-                IR.getprop(moduleAccess, IR.string(pair.originalName))
-                    .useSourceInfoIfMissingFromForTree(n));
+            // y -> moduleObject.x  (was:  import {x as y} from module
+            //                       or    import {default as y} from module
+            //                       or    import y from module  -- equivalent)
+            n.replaceWith(pair.module.getModulePropertyNode(compiler, pair.originalName)
+                          .useSourceInfoIfMissingFromForTree(n));
           }
         }
       }
@@ -592,9 +619,9 @@ public final class ProcessEs6Modules extends AbstractPostOrderCallback {
           } else if (var == null && importMap.containsKey(baseName)) {
             ModuleOriginalNamePair pair = importMap.get(baseName);
             if (pair.originalName.isEmpty()) {
-              typeNode.setString(pair.module + rest);
+              typeNode.setString(pair.module.getModuleNamespace() + rest);
             } else {
-              typeNode.setString(baseName + "$$" + pair.module + rest);
+              typeNode.setString(pair.module.getModuleProperty(pair.originalName) + rest);
             }
           }
           typeNode.setOriginalName(name);
@@ -609,11 +636,110 @@ public final class ProcessEs6Modules extends AbstractPostOrderCallback {
     }
   }
 
+  abstract static class Module {
+    final ExternModule externModule;
+
+    Module(ExternModule externModule) {
+      this.externModule = externModule;
+    }
+
+    boolean isExtern() {
+      return externModule != null;
+    }
+
+    abstract String getModuleNamespace();
+
+    abstract Node getModuleNamespaceNode(Compiler compiler);
+
+    abstract String getModuleProperty(String propertyName);
+
+    abstract Node getModulePropertyNode(Compiler compiler, String propertyName);
+  }
+
+  private static class ClosureModule extends Module {
+    final String name;
+
+    ClosureModule(String name, ExternModule externModule) {
+      super(externModule);
+      this.name = name;
+    }
+
+    String getModuleNamespace() {
+      return name;
+    }
+
+    String getModuleProperty(String propertyName) {
+      return name + "." + propertyName;
+    }
+
+    Node getModuleNamespaceNode(Compiler compiler) {
+      return NodeUtil.newQName(compiler, name);
+    }
+    
+    Node getModulePropertyNode(Compiler compiler, String propertyName) {
+      return IR.getprop(getModuleNamespaceNode(compiler), IR.string(propertyName));
+    }
+  }
+
+  static class NpmModule extends Module {
+    NpmModule(ExternModule externModule) {
+      super(externModule);
+    }
+
+    String getModuleNamespace() {
+      // TODO: Take the name of the first global var object or function
+      // defined in externs.
+      if (externModule.externsPath.endsWith("/highcharts.externs.js")) {
+        return "Highcharts";
+      } else if (externModule.externsPath.endsWith("/history.externs.js")) {
+        return "History";
+      } else if (externModule.externsPath.endsWith("/jquery.externs.js")) {
+        return "jQuery";
+      } else if (externModule.externsPath.endsWith("/moment.externs.js")) {
+        return "moment";
+      } else if (externModule.externsPath.endsWith("/nouislider.externs.js")) {
+        return "noUiSlider";
+      } else if (externModule.externsPath.endsWith("/prop-types.externs.js")) {
+        return "PropTypes";
+      } else if (externModule.externsPath.endsWith("/react.externs.js")) {
+        return "React";
+      } else if (externModule.externsPath.endsWith("/react-dom.externs.js")) {
+        return "ReactDOM";
+      } else if (externModule.externsPath.endsWith("/react-router-dom.externs.js")) {
+        return "ReactRouterDOM";
+      } else {
+        throw new UnsupportedOperationException(
+          "Unknown NPM module, externs=" + externModule.externsPath + "; "
+          + "Need to hardcode in ProcessEs6Modules.java?");
+      }
+    }
+
+    String getModuleProperty(String propertyName) {
+      if ("default".equals(propertyName)) {
+        return getModuleNamespace();
+      } else {
+        return getModuleNamespace() + "." + propertyName;
+      }
+    }
+
+    Node getModuleNamespaceNode(Compiler compiler) {
+      return NodeUtil.newQName(compiler, getModuleNamespace());
+    }
+
+    Node getModulePropertyNode(Compiler compiler, String propertyName) {
+      if ("default".equals(propertyName)) {
+        return getModuleNamespaceNode(compiler);
+      } else {
+        return IR.getprop(getModuleNamespaceNode(compiler), IR.string(propertyName));
+      }
+    }
+  }
+
   private static class ModuleOriginalNamePair {
-    private String module;
+    private Module module;
     private String originalName;
 
-    private ModuleOriginalNamePair(String module, String originalName) {
+    private ModuleOriginalNamePair(Module module, String originalName) {
       this.module = module;
       this.originalName = originalName;
     }

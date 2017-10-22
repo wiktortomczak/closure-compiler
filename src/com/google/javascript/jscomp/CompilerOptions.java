@@ -28,6 +28,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.primitives.Chars;
+import com.google.javascript.jscomp.deps.ExternModule;
 import com.google.javascript.jscomp.deps.ModuleLoader;
 import com.google.javascript.jscomp.parsing.Config;
 import com.google.javascript.rhino.IR;
@@ -834,6 +835,8 @@ public class CompilerOptions {
 
   boolean exportLocalPropertyDefinitions;
 
+  public boolean exportEs6Modules;
+
   /** Map used in the renaming of CSS class names. */
   public CssRenamingMap cssRenamingMap;
 
@@ -1115,6 +1118,9 @@ public class CompilerOptions {
   /** Which algorithm to use for locating ES6 and CommonJS modules */
   ModuleLoader.ResolutionMode moduleResolutionMode;
 
+  /** TODO */
+  ImmutableMap<String, ExternModule> externModules;
+
   /**
    * Should the compiler print its configuration options to stderr when they are initialized?
    *
@@ -1140,6 +1146,7 @@ public class CompilerOptions {
 
     // Modules
     moduleResolutionMode = ModuleLoader.ResolutionMode.LEGACY;
+    externModules = ImmutableMap.<String, ExternModule>of();
 
     // Checks
     skipNonTranspilationPasses = false;
@@ -1247,6 +1254,7 @@ public class CompilerOptions {
     outputJs = OutputJs.NORMAL;
     generateExports = false;
     generateExportsAfterTypeChecking = true;
+    exportEs6Modules = false;
     exportLocalPropertyDefinitions = false;
     cssRenamingMap = null;
     cssRenamingWhitelist = null;
@@ -1688,6 +1696,10 @@ public class CompilerOptions {
 
   public void setExportLocalPropertyDefinitions(boolean export) {
     this.exportLocalPropertyDefinitions = export;
+  }
+
+  public void setExportEs6Modules(boolean exportEs6Modules) {
+    this.exportEs6Modules = exportEs6Modules;
   }
 
   public void setAngularPass(boolean angularPass) {
@@ -2688,6 +2700,14 @@ public class CompilerOptions {
     this.moduleResolutionMode = mode;
   }
 
+  public ImmutableMap<String, ExternModule> getExternModules() {
+    return this.externModules;
+  }
+
+  public void setExternModules(ImmutableMap<String, ExternModule> externModules) {
+    this.externModules = externModules;
+  }
+
   @Override
   public String toString() {
     String strValue =
@@ -2762,6 +2782,7 @@ public class CompilerOptions {
             .add("gatherCssNames", gatherCssNames)
             .add("generateExportsAfterTypeChecking", generateExportsAfterTypeChecking)
             .add("generateExports", generateExports)
+            .add("exportEs6Modules", exportEs6Modules)
             .add("generatePseudoNames", generatePseudoNames)
             .add("generateTypedExterns", shouldGenerateTypedExterns())
             .add("idGenerators", idGenerators)
