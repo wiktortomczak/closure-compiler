@@ -736,6 +736,12 @@ public class CompilerOptions {
   /** Processes goog.provide() and goog.require() calls */
   public boolean closurePass;
 
+  /**
+   * Replaces goog.define() with var name = name || value, instead of
+   * var name = value, so that the value can be overridden at runtime.
+   */
+  public boolean runtimeOverridableClosureDefines;
+
   /** Do not strip goog.provide()/goog.require() calls from the code. */
   private boolean preserveGoogProvidesAndRequires;
 
@@ -1230,6 +1236,7 @@ public class CompilerOptions {
     locale = null;
     markAsCompiled = false;
     closurePass = false;
+    runtimeOverridableClosureDefines = false;
     preserveGoogProvidesAndRequires = false;
     angularPass = false;
     polymerVersion = null;
@@ -2867,6 +2874,7 @@ public class CompilerOptions {
                 renamePrefixNamespaceAssumeCrossModuleNames)
             .add("renamePrefixNamespace", renamePrefixNamespace)
             .add("renamePrefix", renamePrefix)
+            .add("runtimeOverridableClosureDefines", runtimeOverridableClosureDefines)
             .add("replaceIdGenerators", replaceIdGenerators)
             .add("replaceMessagesWithChromeI18n", replaceMessagesWithChromeI18n)
             .add("replaceStringsFunctionDescriptions", replaceStringsFunctionDescriptions)

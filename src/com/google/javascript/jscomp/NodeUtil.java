@@ -713,10 +713,11 @@ public final class NodeUtil {
   /**
    * Determines whether the given value may be assigned to a define.
    *
+   * @param name Define name.
    * @param val The value being assigned.
    * @param defines The list of names of existing defines.
    */
-  static boolean isValidDefineValue(Node val, Set<String> defines) {
+  static boolean isValidDefineValue(String name, Node val, Set<String> defines) {
     switch (val.getToken()) {
       case STRING:
       case NUMBER:
@@ -724,9 +725,15 @@ public final class NodeUtil {
       case FALSE:
         return true;
 
+      case OR:
+        return (isValidDefineValue(name, val.getFirstChild(), defines)
+                // Allow name = name || value.
+                || (val.getFirstChild().isQualifiedName()
+                    && val.getFirstChild().getQualifiedName().equals(name)))
+            && isValidDefineValue(name, val.getLastChild(), defines);
+
       // Binary operators are only valid if both children are valid.
       case AND:
-      case OR:
       case ADD:
       case BITAND:
       case BITNOT:
@@ -748,19 +755,19 @@ public final class NodeUtil {
       case SHNE:
       case SUB:
       case URSH:
-        return isValidDefineValue(val.getFirstChild(), defines)
-            && isValidDefineValue(val.getLastChild(), defines);
+        return isValidDefineValue(name, val.getFirstChild(), defines)
+            && isValidDefineValue(name, val.getLastChild(), defines);
 
       case HOOK:
-        return isValidDefineValue(val.getFirstChild(), defines)
-            && isValidDefineValue(val.getSecondChild(), defines)
-            && isValidDefineValue(val.getLastChild(), defines);
+        return isValidDefineValue(name, val.getFirstChild(), defines)
+            && isValidDefineValue(name, val.getSecondChild(), defines)
+            && isValidDefineValue(name, val.getLastChild(), defines);
 
       // Unary operators are valid if the child is valid.
       case NOT:
       case NEG:
       case POS:
-        return isValidDefineValue(val.getFirstChild(), defines);
+        return isValidDefineValue(name, val.getFirstChild(), defines);
 
       // Names are valid if and only if they are defines themselves.
       case NAME:

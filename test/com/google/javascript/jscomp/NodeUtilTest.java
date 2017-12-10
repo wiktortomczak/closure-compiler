@@ -1403,7 +1403,7 @@ public final class NodeUtilTest extends TestCase {
     Node value = name.getFirstChild();
 
     ImmutableSet<String> defines = ImmutableSet.of();
-    return NodeUtil.isValidDefineValue(value, defines);
+    return NodeUtil.isValidDefineValue("test", value, defines);
   }
 
   @SuppressWarnings("JUnit3FloatingPointComparisonWithoutDelta")

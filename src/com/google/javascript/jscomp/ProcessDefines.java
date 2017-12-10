@@ -416,7 +416,7 @@ class ProcessDefines implements CompilerPass {
      */
     private boolean processDefineAssignment(NodeTraversal t,
         String name, Node value, Node valueParent) {
-      if (value == null || !NodeUtil.isValidDefineValue(value,
+      if (value == null || !NodeUtil.isValidDefineValue(name, value,
                                                         allDefines.keySet())) {
         compiler.report(
             t.makeError(value, INVALID_DEFINE_INIT_ERROR, name));

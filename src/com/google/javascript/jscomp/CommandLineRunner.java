@@ -522,6 +522,12 @@ public class CommandLineRunner extends
         + "True by default.")
     private boolean processClosurePrimitives = true;
 
+    @Option(name = "--runtime_overridable_closure_defines",
+        handler = BooleanOptionHandler.class,
+        usage = "Initialize a @define variable from the very variable, if set, "
+        + "so that its value can be overridden at runtime just by defining it.")
+    private boolean runtimeOverridableClosureDefines = false;
+
     @Option(
       name = "--manage_closure_dependencies",
       hidden = true,
@@ -1685,6 +1691,7 @@ public class CommandLineRunner extends
     }
 
     options.closurePass = flags.processClosurePrimitives;
+    options.runtimeOverridableClosureDefines = flags.runtimeOverridableClosureDefines;
 
     options.angularPass = flags.angularPass;
 

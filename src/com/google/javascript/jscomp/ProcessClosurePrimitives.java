@@ -167,6 +167,7 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
   private final PreprocessorSymbolTable preprocessorSymbolTable;
   private final List<Node> defineCalls = new ArrayList<>();
   private final boolean preserveGoogProvidesAndRequires;
+  private final boolean runtimeOverridableDefines;
 
   private final List<Node> requiresToBeRemoved = new ArrayList<>();
 
@@ -174,11 +175,20 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
       @Nullable PreprocessorSymbolTable preprocessorSymbolTable,
       CheckLevel requiresLevel,
       boolean preserveGoogProvidesAndRequires) {
+    this(compiler, preprocessorSymbolTable, requiresLevel, preserveGoogProvidesAndRequires, true);
+  }
+
+  ProcessClosurePrimitives(AbstractCompiler compiler,
+      @Nullable PreprocessorSymbolTable preprocessorSymbolTable,
+      CheckLevel requiresLevel,
+      boolean preserveGoogProvidesAndRequires,
+      boolean runtimeOverridableDefines) {
     this.compiler = compiler;
     this.preprocessorSymbolTable = preprocessorSymbolTable;
     this.moduleGraph = compiler.getModuleGraph();
     this.requiresLevel = requiresLevel;
     this.preserveGoogProvidesAndRequires = preserveGoogProvidesAndRequires;
+    this.runtimeOverridableDefines = runtimeOverridableDefines;
 
     // goog is special-cased because it is provided in Closure's base library.
     providedNames.put(GOOG,
@@ -227,10 +237,15 @@ class ProcessClosurePrimitives extends AbstractPostOrderCallback
    * @param n
    */
   private void replaceGoogDefines(Node n) {
-    Node parent = n.getParent();
+    Node parent = n.getParent();  // parent: goog.define(name, value);
     Preconditions.checkState(parent.isExprResult());
     String name = n.getSecondChild().getString();
+    // Replace parent with var name = value;
     Node value = n.isFromExterns() ? null : n.getChildAtIndex(2).detach();
+    if (runtimeOverridableDefines) {
+      // Replace parent with var name = name || value;
+      value = IR.or(NodeUtil.newQName(compiler, name), value);
+    }
 
     Node replacement = NodeUtil.newQNameDeclaration(
         compiler, name, value, n.getJSDocInfo());
